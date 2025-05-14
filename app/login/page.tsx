@@ -34,9 +34,8 @@ export default function LoginPage() {
       setIsLoading(false)
     }, 500)
 
-    // If user is already logged in, redirect to dashboard
     if (user) {
-      router.push("/dashboard")
+      router.push("/")
     }
 
     return () => clearTimeout(timer)

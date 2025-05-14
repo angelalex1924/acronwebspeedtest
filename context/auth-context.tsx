@@ -81,7 +81,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         createdAt: new Date().toISOString(),
       })
 
-      router.push("/dashboard")
+      router.push("/")
       return
     } catch (error) {
       console.error("Registration error:", error)
@@ -92,7 +92,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const login = async (email: string, password: string) => {
     try {
       await signInWithEmailAndPassword(auth, email, password)
-      router.push("/dashboard")
+      router.push("/")
       return
     } catch (error) {
       console.error("Login error:", error)
@@ -153,8 +153,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         )
       }
 
-      console.log(`Redirecting to dashboard`)
-      router.push("/dashboard")
+      console.log(`Redirecting to Home`)
+      router.push("/")
     } catch (error) {
       console.error(`${providerName} sign-in error:`, error)
       throw error

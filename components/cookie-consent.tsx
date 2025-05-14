@@ -25,18 +25,22 @@ export function CookieConsent() {
   const handleAccept = () => {
     localStorage.setItem("cookie_consent", "accepted")
     setShowConsent(false)
+
+    // You could trigger analytics or other cookie-dependent features here
+    console.log("Cookies accepted")
   }
 
   const handleDecline = () => {
     localStorage.setItem("cookie_consent", "declined")
     setShowConsent(false)
+
+    // You could disable analytics or other cookie-dependent features here
+    console.log("Cookies declined")
   }
 
   if (!showConsent) return null
 
   return (
-    // Remove the full-screen black backdrop div that wraps everything
-    // but keep the high z-index and mandatory nature (no X button)
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0, y: 100 }}
@@ -44,6 +48,7 @@ export function CookieConsent() {
         exit={{ opacity: 0, y: 100 }}
         transition={{ type: "spring", damping: 20 }}
         className="fixed bottom-0 left-0 right-0 z-[9999] p-4"
+        style={{ backdropFilter: "blur(8px)" }}
       >
         <div className="max-w-6xl mx-auto">
           <div className="bg-white/90 backdrop-blur-md rounded-2xl p-4 md:p-6 shadow-xl border border-white/30 relative overflow-hidden">
@@ -77,25 +82,23 @@ export function CookieConsent() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 mt-4 md:mt-0">
+              <div className="flex flex-wrap gap-2 mt-4 md:mt-0 w-full md:w-auto justify-center md:justify-start">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleDecline}
-                  className="rounded-full border-gray-300 text-gray-600 hover:bg-gray-100"
+                  className="rounded-full border-gray-300 text-gray-600 hover:bg-gray-100 w-full sm:w-auto"
                 >
                   Decline
                 </Button>
                 <Button
                   onClick={handleAccept}
                   size="sm"
-                  className="rounded-full bg-gradient-to-r from-[#82f01f] to-[#a4ff29] hover:opacity-90 text-white border-0 shadow-lg shadow-[#82f01f]/20"
+                  className="rounded-full bg-gradient-to-r from-[#82f01f] to-[#a4ff29] hover:opacity-90 text-white border-0 shadow-lg shadow-[#82f01f]/20 w-full sm:w-auto"
                 >
                   Accept All Cookies
                 </Button>
               </div>
-
-              {/* Removed the X button to make consent mandatory */}
             </div>
           </div>
         </div>

@@ -1,6 +1,8 @@
 import type React from "react";
 import "@/app/globals.css";
-import { Inter } from "next/font/google";
+import { Inter } from 'next/font/google';
+import { AuthProvider } from "@/context/auth-context"; // Import the AuthProvider
+import InstallPWA from "@/components/InstallPWA"; // Import the PWA install component
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -21,7 +23,12 @@ export default function RootLayout({
         <meta name="msapplication-TileColor" content="#82f01f" />
         <meta name="theme-color" content="#ffffff" />
       </head>
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <AuthProvider>
+          {children} {/* Wrap children with AuthProvider */}
+          <InstallPWA /> {/* Add the PWA install banner */}
+        </AuthProvider>
+      </body>
     </html>
   );
 }

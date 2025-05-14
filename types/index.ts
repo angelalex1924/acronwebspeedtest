@@ -1,12 +1,4 @@
-export interface Server {
-  id: number
-  location: string
-  provider: string
-  distance: number
-  ping: number
-  url: string
-}
-
+// Define the TestResult type for the speed test history
 export interface TestResult {
   date: string
   download: number
@@ -14,7 +6,24 @@ export interface TestResult {
   ping: number
   jitter: number
   server: string
-  packetLoss?: number
-  latencyStability?: number
+  packetLoss: number
+  latencyStability: number
+}
+
+// Define the SpeedTestResult type for Firestore
+export interface SpeedTestResult {
+  id?: string
+  userId: string
+  downloadSpeed: number
+  uploadSpeed: number
+  ping: number
+  jitter: number
+  server: string
+  packetLoss: number
+  latencyStability: number
+  date: Date
+  deviceType?: string
+  networkType?: string
+  isp?: string
 }
 

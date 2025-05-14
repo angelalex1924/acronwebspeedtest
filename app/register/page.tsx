@@ -40,7 +40,7 @@ export default function RegisterPage() {
 
     // If user is already logged in, redirect to dashboard
     if (user) {
-      router.push("/dashboard")
+      router.push("/")
     }
 
     return () => clearTimeout(timer)

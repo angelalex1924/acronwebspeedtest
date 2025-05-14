@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,8 @@ import { ServerSelector } from "@/components/server-selector"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import dynamic from "next/dynamic"
+import { useRouter } from "next/navigation"
+import Link from "next/link"
 import {
   Wifi,
   ArrowDown,
@@ -27,30 +29,37 @@ import {
   Rocket,
   Cpu,
   Database,
+  LogOut,
+  User,
+  Settings,
+  ChevronDown,
+  LogIn,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useSpeedTest } from "@/hooks/use-speed-test"
 import { Logo } from "@/components/logo"
-import Link from "next/link"
 import { NetworkCard } from "@/components/network-card"
 import { FloatingParticles } from "@/components/floating-particles"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { ConfettiEffect } from "@/components/confetti-effect"
-// Add the SimpleShareButton to the imports
 import { SimpleShareButton } from "@/components/simple-share-button"
-// Add the import for ProviderRating at the top of the file with the other imports
 import { ProviderRating } from "@/components/provider-rating"
-// Import the CookieConsent component at the top with other imports
 import { CookieConsent } from "@/components/cookie-consent"
-// Add this import at the top with the other imports
 import { InlineProviderRating } from "@/components/inline-provider-rating"
-
-// Remove all the new components we added previously
-// import { RealTimeGraph } from "@/components/real-time-graph"
-// import { NetworkQualityScore } from "@/components/network-quality-score"
-// import { SpeedParticles } from "@/components/speed-particles"
-// import { SoundEffects } from "@/components/sound-effects"
-// import { ShareResults } from "@/components/share-results"
+import { useAuth } from "@/context/auth-context"
+import { useFirestore } from "@/hooks/use-firestore"
+import { toast } from "@/components/ui/use-toast"
+import { Toaster } from "@/components/ui/toaster"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useThrottle } from "@/hooks/use-throttle"
 
 // Dynamically import components that aren't needed immediately
 const ResultsGraph = dynamic(
@@ -146,17 +155,22 @@ const ActivitySuitability = dynamic(
   },
 )
 
-// Define InlineProviderRating component
-// const InlineProviderRating = ({ providerName }: { providerName: string }) => (
-//   <div className="text-center">
-//     <p className="text-sm text-gray-500">
-//       Enjoying your speed provided by {providerName}?
-//     </p>
-//     <Button size="sm" variant="outline" className="border-[#82f01f]/50 text-[#82f01f] hover:bg-[#82f01f]/10 rounded-full">
-//       Rate Your Provider
-//     </Button>
-//   </div>
-// );
+// Add a new component for displaying saved test results
+const SavedResults = dynamic(
+  () => import("@/components/saved-results").then((mod) => ({ default: mod.SavedResults })),
+  {
+    loading: () => (
+      <div className="h-64 flex items-center justify-center">
+        <div className="animate-pulse flex flex-col items-center">
+          <div className="h-8 w-32 bg-gray-200 rounded mb-4"></div>
+          <div className="h-32 w-full bg-gray-200 rounded"></div>
+          <p className="mt-4 text-gray-500">Loading saved results...</p>
+        </div>
+      </div>
+    ),
+    ssr: false,
+  },
+)
 
 export default function SpeedTest() {
   const [mounted, setMounted] = useState(false)
@@ -165,20 +179,29 @@ export default function SpeedTest() {
   const isMobile = useMediaQuery("(max-width: 768px)")
   const [showConfetti, setShowConfetti] = useState(false)
   const [testCompleted, setTestCompleted] = useState(false)
-  // Add a new state for showing the provider rating modal
-  // Add this after the other useState declarations, around line 80
   const [showProviderRating, setShowProviderRating] = useState(false)
-  // Remove the state for real-time graphs
-  // const [downloadHistory, setDownloadHistory] = useState<number[]>([])
-  // const [uploadHistory, setUploadHistory] = useState<number[]>([])
-  // const [pingHistory, setPingHistory] = useState<number[]>([])
+  const [resultSaved, setResultSaved] = useState(false)
+  const { user, logout, loading } = useAuth()
+  const { saveTestResult, testResults, fetchTestResults } = useFirestore()
+  const router = useRouter()
 
-  // In the component, add finalPing to the destructured values from useSpeedTest
+  // Memoize the first name calculation to prevent unnecessary recalculations
+  const firstName = useMemo(() => {
+    if (!user) return ""
+
+    if (user.displayName) {
+      return user.displayName.split(" ")[0]
+    } else if (user.email) {
+      return user.email.split("@")[0]
+    }
+    return "User"
+  }, [user])
+
   const {
     downloadSpeed,
     uploadSpeed,
     ping,
-    finalPing, // Add this line
+    finalPing,
     jitter,
     selectedServer,
     servers,
@@ -197,17 +220,8 @@ export default function SpeedTest() {
     activitySuitability,
   } = useSpeedTest()
 
-  // Define the TestResult type
-  interface TestResult {
-    date: string
-    download: number
-    upload: number
-    ping: number
-    jitter: number
-    server: string
-    packetLoss: number
-    latencyStability: number
-  }
+  // Throttle progress updates to improve performance
+  const throttledProgress = useThrottle(progress, 100)
 
   useEffect(() => {
     setMounted(true)
@@ -223,6 +237,7 @@ export default function SpeedTest() {
     if (testPhase === "complete" && !testCompleted) {
       setShowConfetti(true)
       setTestCompleted(true)
+      setResultSaved(false)
 
       // Hide confetti after 5 seconds
       const timer = setTimeout(() => {
@@ -237,9 +252,80 @@ export default function SpeedTest() {
     }
   }, [testPhase, testCompleted])
 
+  // Add this useEffect to fetch results when the component mounts
+  useEffect(() => {
+    if (user) {
+      fetchTestResults()
+    }
+  }, [user, fetchTestResults])
+
   const handleStartTest = () => {
     startTest()
     setTestCompleted(false)
+    setResultSaved(false)
+  }
+
+  // Function to navigate to a page
+  const navigateTo = (path: string) => {
+    router.push(path)
+  }
+
+  // Function to save test result to Firestore
+  const handleSaveResult = async () => {
+    if (!user) {
+      toast({
+        title: "Login Required",
+        description: "Please login to save your test results",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (resultSaved) {
+      toast({
+        title: "Already Saved",
+        description: "This test result has already been saved",
+      })
+      return
+    }
+
+    const testData = {
+      downloadSpeed,
+      uploadSpeed,
+      ping: finalPing || ping,
+      jitter,
+      server: selectedServer?.location || "Unknown",
+      packetLoss,
+      latencyStability,
+      deviceType: navigator.userAgent,
+      networkType,
+      isp,
+    }
+
+    const resultId = await saveTestResult(testData)
+
+    if (resultId) {
+      setResultSaved(true)
+      toast({
+        title: "Test Result Saved",
+        description: "Your speed test result has been saved successfully",
+      })
+
+      // Explicitly fetch results after saving
+      fetchTestResults()
+
+      // Switch to the saved tab to show the results
+      const savedTab = document.querySelector('[data-value="saved"]') as HTMLElement
+      if (savedTab) {
+        savedTab.click()
+      }
+    } else {
+      toast({
+        title: "Error",
+        description: "Failed to save test result. Please try again.",
+        variant: "destructive",
+      })
+    }
   }
 
   if (!mounted) return null
@@ -266,18 +352,14 @@ export default function SpeedTest() {
       ref={containerRef}
       className="w-full min-h-screen bg-gradient-to-br from-[#f8fbfe] to-[#e6f4f1] flex flex-col items-center justify-center overflow-hidden relative"
     >
+      {/* Toaster for notifications */}
+      <Toaster />
+
       {/* Confetti effect when test completes */}
       {showConfetti && <ConfettiEffect isActive={showConfetti} />}
 
       {/* Animated background */}
       <FloatingParticles />
-      {/* In the return statement, remove the SpeedParticles component */}
-      {/* <SpeedParticles
-        downloadSpeed={downloadSpeed}
-        uploadSpeed={uploadSpeed}
-        isRunning={isRunning}
-        testPhase={testPhase}
-      /> */}
 
       {/* Background elements */}
       <div className="absolute inset-0 overflow-hidden">
@@ -302,6 +384,91 @@ export default function SpeedTest() {
                 Terms of Use
               </Link>
             </>
+          )}
+
+          {/* Auth Section */}
+          {loading ? (
+            // Loading state
+            <div className="h-10 w-32 bg-gray-200/50 animate-pulse rounded-full"></div>
+          ) : user ? (
+            // Logged in state - Modern and spectacular design
+            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button className="bg-white/80 backdrop-blur-sm border border-[#82f01f]/30 hover:bg-white/90 shadow-lg hover:shadow-xl transition-all duration-300 rounded-full pl-3 pr-4 h-11">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-7 w-7 border-2 border-[#82f01f]">
+                        <AvatarImage src={user.photoURL || ""} alt={firstName} />
+                        <AvatarFallback className="text-xs bg-gradient-to-br from-[#82f01f] to-[#a4ff29] text-white font-medium">
+                          {firstName.charAt(0).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex flex-col items-start text-left">
+                        <span className="text-sm font-medium text-gray-800 max-w-[100px] truncate">{firstName}</span>
+                        <span className="text-xs text-gray-500">Account</span>
+                      </div>
+                      <ChevronDown className="h-4 w-4 text-gray-500 ml-1" />
+                    </div>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="w-56 p-2 bg-white/90 backdrop-blur-md border border-[#82f01f]/20 shadow-xl rounded-xl"
+                >
+                  <DropdownMenuLabel className="text-[#82f01f] font-medium">My Account</DropdownMenuLabel>
+                  <DropdownMenuSeparator className="bg-[#82f01f]/10" />
+                  <DropdownMenuItem asChild className="rounded-lg hover:bg-[#82f01f]/10 cursor-pointer">
+                    <Link href="/profile" className="flex items-center w-full">
+                      <User className="mr-2 h-4 w-4 text-[#82f01f]" />
+                      <span>Profile</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="rounded-lg hover:bg-[#82f01f]/10 cursor-pointer">
+                    <Link href="/settings" className="flex items-center w-full">
+                      <Settings className="mr-2 h-4 w-4 text-[#82f01f]" />
+                      <span>Settings</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-[#82f01f]/10" />
+                  <DropdownMenuItem
+                    onClick={() => logout()}
+                    className="rounded-lg hover:bg-red-50 text-red-600 cursor-pointer flex items-center"
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Logout</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </motion.div>
+          ) : (
+            // Logged out state - Modern and spectacular design
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="flex items-center gap-3"
+            >
+              <Button
+                asChild
+                variant="outline"
+                className="bg-white/80 backdrop-blur-sm border border-[#82f01f]/30 text-[#82f01f] hover:bg-[#82f01f]/10 hover:text-[#82f01f] transition-all duration-300 shadow-md hover:shadow-lg rounded-full px-5"
+              >
+                <Link href="/login">
+                  <LogIn className="h-4 w-4 mr-2" />
+                  Login
+                </Link>
+              </Button>
+
+              <Button
+                asChild
+                className="bg-gradient-to-r from-[#82f01f] to-[#a4ff29] hover:opacity-90 text-white transition-all duration-300 shadow-lg hover:shadow-xl rounded-full px-5 relative overflow-hidden group"
+              >
+                <Link href="/register">
+                  <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-[#82f01f]/0 via-white/20 to-[#82f01f]/0 transform -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></span>
+                  <span className="relative z-10">Register</span>
+                </Link>
+              </Button>
+            </motion.div>
           )}
         </div>
       </div>
@@ -348,17 +515,9 @@ export default function SpeedTest() {
         >
           <Card className="border-0 overflow-hidden bg-white/70 backdrop-blur-xl shadow-xl shadow-[#82f01f]/5 rounded-2xl">
             <CardContent className="p-4 md:p-6">
-              {/* Remove the SoundEffects component */}
-              {/* <SoundEffects
-                testPhase={testPhase}
-                isRunning={isRunning}
-                downloadSpeed={downloadSpeed}
-                uploadSpeed={uploadSpeed}
-                volume={0.3}
-              /> */}
               <Tabs defaultValue="speedtest" className="w-full">
                 <TabsList
-                  className={`grid w-full ${isMobile ? "grid-cols-3" : "grid-cols-5"} mb-6 bg-white/50 backdrop-blur-sm p-1 rounded-full`}
+                  className={`grid w-full ${isMobile ? "grid-cols-4" : "grid-cols-6"} mb-6 bg-white/50 backdrop-blur-sm p-1 rounded-full`}
                 >
                   <TabsTrigger
                     value="speedtest"
@@ -380,6 +539,13 @@ export default function SpeedTest() {
                   >
                     <Zap className="mr-2 h-4 w-4" />
                     {!isMobile && "Insights"}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="saved"
+                    className="rounded-full data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#82f01f] data-[state=active]:to-[#a4ff29] data-[state=active]:text-white"
+                  >
+                    <Database className="mr-2 h-4 w-4" />
+                    {!isMobile && "Cloud Saved"}
                   </TabsTrigger>
                   {!isMobile && (
                     <>
@@ -455,43 +621,13 @@ export default function SpeedTest() {
                                 testPhase === "download" ? "Download" : testPhase === "upload" ? "Upload" : "Ready"
                               }
                               units="Mbps"
-                              progress={progress}
+                              progress={throttledProgress}
                               phase={testPhase}
                               type={testPhase === "upload" ? "upload" : "download"}
                             />
                           </div>
                         </motion.div>
                       </AnimatePresence>
-
-                      {/* Remove the real-time graphs section */}
-                      {/* {isRunning && (
-                        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <RealTimeGraph
-                            data={downloadHistory}
-                            maxValue={1000}
-                            label="Download Speed"
-                            color="#82f01f"
-                            isActive={testPhase === "download"}
-                            units="Mbps"
-                          />
-                          <RealTimeGraph
-                            data={uploadHistory}
-                            maxValue={500}
-                            label="Upload Speed"
-                            color="#FBAB7E"
-                            isActive={testPhase === "upload"}
-                            units="Mbps"
-                          />
-                          <RealTimeGraph
-                            data={pingHistory}
-                            maxValue={200}
-                            label="Ping"
-                            color="#4158D0"
-                            isActive={false}
-                            units="ms"
-                          />
-                        </div>
-                      )} */}
 
                       <div className="flex gap-4 mt-4">
                         <Button
@@ -526,6 +662,23 @@ export default function SpeedTest() {
                             className="border-[#82f01f]/50 text-[#82f01f] hover:bg-[#82f01f]/10 rounded-full"
                           >
                             Cancel
+                          </Button>
+                        )}
+
+                        {/* Save Result Button */}
+                        {testPhase === "complete" && user && (
+                          <Button
+                            onClick={handleSaveResult}
+                            disabled={resultSaved}
+                            variant="outline"
+                            size={isMobile ? "default" : "lg"}
+                            className={cn(
+                              "border-[#82f01f]/50 text-[#82f01f] hover:bg-[#82f01f]/10 rounded-full",
+                              resultSaved && "opacity-50 cursor-not-allowed",
+                            )}
+                          >
+                            <Database className="mr-2 h-4 w-4" />
+                            {resultSaved ? "Saved to Cloud" : "Save to Cloud"}
                           </Button>
                         )}
                       </div>
@@ -563,7 +716,6 @@ export default function SpeedTest() {
                             <span className="text-sm md:text-lg font-normal text-muted-foreground">Mbps</span>
                           </div>
                         </motion.div>
-                        {/* Add the final ping display in the ping card */}
                         <motion.div
                           initial={{ opacity: 0, y: 20 }}
                           animate={{ opacity: 1, y: 0 }}
@@ -630,23 +782,23 @@ export default function SpeedTest() {
                     </motion.div>
                   )}
 
-                  {/* Remove the ShareResults component */}
-                  {/* {testPhase === "complete" && (
+                  {/* Add this after the Activity Suitability section */}
+                  {testPhase === "complete" && user && (
                     <motion.div
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.8, duration: 0.5 }}
-                      className="mt-6"
+                      className="mt-4 text-center"
                     >
-                      <ShareResults
-                        downloadSpeed={downloadSpeed}
-                        uploadSpeed={uploadSpeed}
-                        ping={ping}
-                        jitter={jitter}
-                        server={selectedServer?.location || "Unknown"}
-                      />
+                      <p className="text-sm text-gray-600">
+                        This test result is temporarily stored in your session. Click "Save to Cloud" to permanently
+                        store it in your account.
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Saved results can be viewed in the "Cloud Saved" tab.
+                      </p>
                     </motion.div>
-                  )} */}
+                  )}
 
                   {/* Additional network information cards */}
                   <motion.div
@@ -681,15 +833,6 @@ export default function SpeedTest() {
                 </TabsContent>
 
                 <TabsContent value="insights" className="mt-0">
-                  {/* Remove the NetworkQualityScore component */}
-                  {/* <NetworkQualityScore
-                    downloadSpeed={downloadSpeed}
-                    uploadSpeed={uploadSpeed}
-                    ping={ping}
-                    jitter={jitter}
-                    packetLoss={packetLoss}
-                    latencyStability={latencyStability}
-                  /> */}
                   <div className="mt-6">
                     <SpeedInsights
                       downloadSpeed={downloadSpeed}
@@ -700,6 +843,11 @@ export default function SpeedTest() {
                       latencyStability={latencyStability}
                     />
                   </div>
+                </TabsContent>
+
+                {/* New tab for saved results */}
+                <TabsContent value="saved" className="mt-0">
+                  <SavedResults results={testResults} />
                 </TabsContent>
 
                 {!isMobile && (
@@ -720,8 +868,7 @@ export default function SpeedTest() {
             </CardContent>
           </Card>
         </motion.div>
-        {/* Add the SimpleShareButton at the bottom of the page, just before the footer */}
-        {/* Add this right before the closing </div> of the main content div */}
+
         <div className="mt-6 flex flex-col items-center gap-4">
           {testPhase === "complete" && (
             <>
@@ -739,8 +886,6 @@ export default function SpeedTest() {
             </>
           )}
         </div>
-        {/* Add a button to manually trigger the provider rating modal for testing */}
-        {/* Add this right after the SimpleShareButton div, around line 580 */}
 
         {/* Provider Rating Modal */}
         <ProviderRating
@@ -749,24 +894,78 @@ export default function SpeedTest() {
           onClose={() => setShowProviderRating(false)}
         />
       </div>
-      {/* Add the CookieConsent component at the end of the return statement, just before the closing div */}
-      {/* Add this right before the final closing div of the component, around line 610 */}
+
+      {/* Cookie Consent */}
       <CookieConsent />
 
       {/* Footer */}
       <div className="relative z-10 w-full max-w-6xl mx-auto px-4 py-8 mt-8 text-center">
-        <p className="text-sm text-gray-600">© {new Date().getFullYear()} Acron Web – Sole Proprietorship. All rights reserved.</p>
+        <p className="text-sm text-gray-600">
+          © {new Date().getFullYear()} Acron Web – Sole Proprietorship. All rights reserved.
+        </p>
         {isMobile && (
-          <div className="flex justify-center gap-4 mt-4">
-            <Link
-              href="/privacy-policy"
-              className="text-xs font-medium text-gray-600 hover:text-[#82f01f] transition-colors"
-            >
-              Privacy Policy
-            </Link>
-            <Link href="/terms" className="text-xs font-medium text-gray-600 hover:text-[#82f01f] transition-colors">
-              Terms of Use
-            </Link>
+          <div className="flex flex-col items-center gap-4 mt-4">
+            <div className="flex justify-center gap-4">
+              <Link
+                href="/privacy-policy"
+                className="text-xs font-medium text-gray-600 hover:text-[#82f01f] transition-colors"
+              >
+                Privacy Policy
+              </Link>
+              <Link href="/terms" className="text-xs font-medium text-gray-600 hover:text-[#82f01f] transition-colors">
+                Terms of Use
+              </Link>
+            </div>
+
+            {user ? (
+              <div className="flex gap-2 flex-wrap justify-center">
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="text-xs border-[#82f01f]/30 text-[#82f01f] hover:bg-[#82f01f]/10"
+                >
+                  <Link href="/profile">
+                    <User className="mr-1 h-3 w-3" />
+                    Profile
+                  </Link>
+                </Button>
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="text-xs border-[#82f01f]/30 text-[#82f01f] hover:bg-[#82f01f]/10"
+                >
+                  <Link href="/settings">
+                    <Settings className="mr-1 h-3 w-3" />
+                    Settings
+                  </Link>
+                </Button>
+                <Button
+                  onClick={() => logout()}
+                  variant="outline"
+                  size="sm"
+                  className="text-xs border-red-300 text-red-500 hover:bg-red-50"
+                >
+                  <LogOut className="mr-1 h-3 w-3" />
+                  Logout
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="text-xs border-[#82f01f]/30 text-[#82f01f] hover:bg-[#82f01f]/10"
+                >
+                  <Link href="/login">Login</Link>
+                </Button>
+                <Button asChild size="sm" className="text-xs bg-gradient-to-r from-[#82f01f] to-[#a4ff29] text-white">
+                  <Link href="/register">Register</Link>
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
